@@ -755,6 +755,73 @@ function sfxWin() {
   });
 }
 
+
+// ═══════════════════════════════════════════════════════
+// SUPABASE LEADERBOARD
+// ═══════════════════════════════════════════════════════
+const SB_URL = 'https://wcemkmwrlvijxxwybrgs.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjZW1rbXdybHZpanh4d3licmdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMzA1NDgsImV4cCI6MjA5MDcwNjU0OH0.Ji557wlvrS7YgflU9ANEm9To6AXLc47EFPaMHTgGARg';
+
+async function sbFetch(path, opts) {
+  opts = opts || {};
+  const res = await fetch(SB_URL + path, {
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': opts.prefer || '',
+    },
+    method: opts.method || 'GET',
+    body: opts.body || undefined,
+  });
+  if (!res.ok) { console.warn('Supabase error', res.status); return null; }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function submitScore(playerName, clearTimeMs, enemiesKilled, rankGrade) {
+  return sbFetch('/rest/v1/cell_defense_leaderboard', {
+    method: 'POST',
+    prefer: 'return=minimal',
+    body: JSON.stringify({
+      player_name: playerName,
+      clear_time_ms: clearTimeMs,
+      enemies_killed: enemiesKilled,
+      rank_grade: rankGrade,
+    }),
+  });
+}
+
+async function fetchLeaderboard() {
+  const data = await sbFetch(
+    '/rest/v1/cell_defense_leaderboard?select=player_name,clear_time_ms,enemies_killed,rank_grade&order=clear_time_ms.asc&limit=10'
+  );
+  return data || [];
+}
+
+async function renderLeaderboard() {
+  const el = document.getElementById('leaderboard');
+  if (!el) return;
+  el.innerHTML = '<div class="lb-title">🏆 全球排行榜 — 最快破關</div><div style="color:#888;font-size:11px;padding:4px;">載入中...</div>';
+  const rows = await fetchLeaderboard();
+  const medals = ['🥇','🥈','🥉'];
+  const entries = rows.map((r, i) => {
+    const mins = Math.floor(r.clear_time_ms / 60000);
+    const secs = Math.floor((r.clear_time_ms % 60000) / 1000);
+    const time = (mins > 0 ? mins + 'm' : '') + secs + 's';
+    const gc = r.rank_grade === 'S' ? '#ffd700' : r.rank_grade === 'A' ? '#c0c0c0' : r.rank_grade === 'B' ? '#cd7f32' : '#888';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;' +
+      'padding:5px 6px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:11px;">' +
+      '<span style="color:#a78bfa;width:22px;">' + (medals[i] || (i+1)+'.') + '</span>' +
+      '<span style="flex:1;color:#eee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + r.player_name + '</span>' +
+      '<span style="color:#3b9edd;width:38px;text-align:right;">' + time + '</span>' +
+      '<span style="color:' + gc + ';width:22px;text-align:right;font-weight:900;">' + r.rank_grade + '</span>' +
+      '</div>';
+  }).join('');
+  el.innerHTML = '<div class="lb-title">🏆 全球排行榜 — 最快破關</div>' + 
+    (entries || '<div style="color:#666;font-size:11px;padding:4px;">尚無記錄</div>');
+}
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const W = 480, H = 720;
@@ -1535,21 +1602,15 @@ function endGame() {
   rd.textContent = rank;
   rd.className = 'rank-display rank-' + rank.toLowerCase();
 
-  // Save to leaderboard
-  leaderboard.push({ name: playerName, time: timeMs, timeStr, rank, kills: enemiesKilled });
-  leaderboard.sort((a, b) => a.time - b.time);
-  leaderboard = leaderboard.slice(0, 5);
-  localStorage.setItem('cellDefenseLB', JSON.stringify(leaderboard));
-
-  // Render leaderboard
-  const lb = document.getElementById('leaderboard');
-  lb.innerHTML = '<div class="lb-title">🏆 LEADERBOARD — BEST TIMES</div>';
-  leaderboard.forEach((entry, idx) => {
-    const row = document.createElement('div');
-    row.className = 'lb-row' + (entry.name === playerName ? ' highlight' : '');
-    row.innerHTML = `<span>${idx + 1}. ${entry.name}</span><span>${entry.timeStr} [${entry.rank}]</span>`;
-    lb.appendChild(row);
+  // Submit to Supabase & render global leaderboard
+  submitScore(playerName, timeMs, enemiesKilled, rank).then(() => {
+    renderLeaderboard();
   });
+
+  // Also update leaderboard header
+  const lb = document.getElementById('leaderboard');
+  lb.innerHTML = '<div class="lb-title">🏆 全球排行榜 — 最快破關</div>';
+  renderLeaderboard();
 
   // Draw final state on canvas
   drawBG();
