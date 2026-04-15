@@ -529,7 +529,13 @@ let sfxGain = null;
 let audioReady = false;
 
 function initAudio() {
-  if (audioReady) return;
+  if (audioReady) {
+    // Resume if suspended (GitHub Pages / browser policy)
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    return;
+  }
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     // Master SFX gain
@@ -541,7 +547,7 @@ function initAudio() {
     bgmGain.gain.value = 0.22;
     bgmGain.connect(audioCtx.destination);
     audioReady = true;
-    startBGM();
+    audioCtx.resume().then(() => startBGM()).catch(() => startBGM());
   } catch(e) { console.warn('Audio unavailable', e); }
 }
 
@@ -1531,6 +1537,8 @@ function gameLoop(ts) {
 
 // ─── Comic Intro ─────────────────────────────────────────
 function showComicIntro() {
+  // Ensure AudioContext is running (browser autoplay policy)
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   document.getElementById('startScreen').classList.add('hidden');
   const comicEl = document.getElementById('comicScreen');
   comicEl.classList.remove('hidden');
@@ -1573,6 +1581,8 @@ function startGame() {
   PLAYER.x = W / 2;
 
   document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('comicScreen').classList.add('hidden');
+  document.getElementById('endScreen').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
   document.getElementById('shootControls').classList.remove('hidden');
   document.getElementById('hudName').textContent = playerName;
